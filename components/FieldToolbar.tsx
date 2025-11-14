@@ -1,16 +1,18 @@
 'use client';
 
 import { Field } from '@/types';
-import { 
-  PenTool, 
-  Calendar, 
-  Type, 
-  Mail, 
-  User 
+import {
+  PenTool,
+  Calendar,
+  Type,
+  Mail,
+  User,
+  Info,
 } from 'lucide-react';
 
 interface FieldToolbarProps {
-  onAddField: (type: Field['type']) => void;
+  onAddField?: (type: Field['type']) => void;
+  mode?: 'legacy' | 'recipientBased';
 }
 
 const fieldTypes = [
@@ -21,7 +23,34 @@ const fieldTypes = [
   { type: 'TEXT' as const, icon: Type, label: 'Text', color: 'bg-gray-500' },
 ];
 
-export default function FieldToolbar({ onAddField }: FieldToolbarProps) {
+export default function FieldToolbar({
+  onAddField,
+  mode = 'legacy',
+}: FieldToolbarProps) {
+  if (mode === 'recipientBased') {
+    return (
+      <div className="bg-white border border-dashed border-gray-300 rounded-lg p-4 shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-blue-100 rounded-full text-blue-600">
+            <Info className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold mb-1 text-black">
+              Drag places from a recipient
+            </h3>
+            <p className="text-sm text-gray-600">
+              Select a recipient, then drag one of their field chips onto the document. Each field is automatically assigned to that recipient.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!onAddField) {
+    return null;
+  }
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
       <h3 className="text-sm font-semibold mb-3 text-gray-700">Add Fields</h3>

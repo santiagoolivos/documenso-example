@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PDFUpload, { UploadResult } from '@/components/PDFUpload';
 import FieldToolbar from '@/components/FieldToolbar';
@@ -23,6 +23,18 @@ export default function EnvelopePage() {
   const [documentTitle, setDocumentTitle] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeRecipientId, setActiveRecipientId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (recipients.length === 0) {
+      setActiveRecipientId(null);
+      return;
+    }
+
+    if (!activeRecipientId || !recipients.some((r) => r.id === activeRecipientId)) {
+      setActiveRecipientId(recipients[0].id);
+    }
+  }, [recipients, activeRecipientId]);
 
   const handleUploadSuccess = (uploadResult: UploadResult, uploadedFile: File) => {
     const resolvedEnvelopeId =
@@ -44,6 +56,7 @@ export default function EnvelopePage() {
     const newField: Field = {
       id: `field-${Date.now()}-${Math.random()}`,
       ...fieldData,
+      recipientId: fieldData.recipientId ?? null,
     };
     setFields([...fields, newField]);
   };
@@ -209,6 +222,10 @@ export default function EnvelopePage() {
             <RecipientForm
               recipients={recipients}
               onRecipientsChange={setRecipients}
+              activeRecipientId={activeRecipientId}
+              onSelectRecipient={setActiveRecipientId}
+              onFieldDragStart={() => {}}
+              onFieldDragEnd={() => {}}
             />
           </div>
 

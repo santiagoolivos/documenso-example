@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import { Field, Recipient } from '@/types';
+import { Field, FieldType, Recipient } from '@/types';
 import DraggableField from './DraggableField';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -18,6 +18,8 @@ interface PDFViewerProps {
   onFieldUpdate: (field: Field) => void;
   onFieldDelete: (id: string) => void;
   onFieldAdd?: (field: Omit<Field, 'id'>) => void;
+  onFieldDrop?: (position: { xPercent: number; yPercent: number; page: number }) => void;
+  isFieldDragActive?: boolean;
 }
 
 export default function PDFViewer({
@@ -27,11 +29,15 @@ export default function PDFViewer({
   onFieldUpdate,
   onFieldDelete,
   onFieldAdd,
+  onFieldDrop,
+  isFieldDragActive = false,
 }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [containerWidth, setContainerWidth] = useState(0);
   const [pdfDimensions, setPdfDimensions] = useState({ width: 0, height: 0 });
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -56,8 +62,8 @@ export default function PDFViewer({
     if (!onFieldAdd || pdfDimensions.width === 0 || pdfDimensions.height === 0) return;
     
     const rect = e.currentTarget.getBoundingClientRect();
-    const xPercent = ((e.clientX - rect.left) / pdfDimensions.width) * 100;
-    const yPercent = ((e.clientY - rect.top) / pdfDimensions.height) * 100;
+    const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+    const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
     const defaultWidth = 15;
     const defaultHeight = 5;
     const clampedX = Math.max(0, Math.min(100 - defaultWidth, xPercent));
@@ -70,8 +76,52 @@ export default function PDFViewer({
       width: defaultWidth,
       height: defaultHeight,
       page: currentPage,
+      recipientId: null,
       required: true,
     });
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!isFieldDragActive || !onFieldDrop) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    if (!isDragOver) {
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = () => {
+    if (isDragOver) {
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!isFieldDragActive || !onFieldDrop || pdfDimensions.width === 0 || pdfDimensions.height === 0) {
+      setIsDragOver(false);
+      return;
+    }
+    event.preventDefault();
+
+    const rect = dropZoneRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setIsDragOver(false);
+      return;
+    }
+
+    const relativeX = (event.clientX - rect.left) / rect.width;
+    const relativeY = (event.clientY - rect.top) / rect.height;
+    const xPercent = Math.max(0, Math.min(100, relativeX * 100));
+    const yPercent = Math.max(0, Math.min(100, relativeY * 100));
+
+    onFieldDrop({
+      xPercent,
+      yPercent,
+      page: currentPage,
+    });
+    setIsDragOver(false);
   };
 
   return (
@@ -107,8 +157,14 @@ export default function PDFViewer({
         className="flex-1 bg-gray-100 rounded-lg overflow-auto p-5"
       >
         <div 
-          className="relative inline-block bg-white shadow-lg cursor-crosshair"
+          ref={dropZoneRef}
+          className={`relative inline-block bg-white shadow-lg ${
+            isFieldDragActive ? 'cursor-copy' : onFieldAdd ? 'cursor-crosshair' : 'cursor-default'
+          } ${isDragOver ? 'ring-2 ring-blue-400 ring-offset-2' : ''}`}
           onClick={handlePdfClick}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          onDragLeave={handleDragLeave}
         >
           <Document
             file={file}
@@ -131,17 +187,17 @@ export default function PDFViewer({
           {/* Render fields for current page */}
           {fields
             .filter(field => field.page === currentPage)
-            .map(field => (
-              <DraggableField
-                key={field.id}
-                field={field}
-                recipients={recipients}
-                pageWidth={pdfDimensions.width}
-                pageHeight={pdfDimensions.height}
-                onUpdate={onFieldUpdate}
-                onDelete={onFieldDelete}
-              />
-            ))}
+              .map(field => (
+                <DraggableField
+                  key={field.id}
+                  field={field}
+                  recipients={recipients}
+                  pageWidth={pdfDimensions.width}
+                  pageHeight={pdfDimensions.height}
+                  onUpdate={onFieldUpdate}
+                  onDelete={onFieldDelete}
+                />
+              ))}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { Field, Recipient } from '@/types';
+import { Field, FieldType, Recipient } from '@/types';
 import { useState, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
 
@@ -13,12 +13,18 @@ interface DraggableFieldProps {
   onDelete: (id: string) => void;
 }
 
-const fieldColors: Record<Field['type'], string> = {
+const fieldColors: Partial<Record<FieldType, string>> = {
   SIGNATURE: 'bg-blue-200 border-blue-600 text-blue-800',
+  FREE_SIGNATURE: 'bg-sky-200 border-sky-600 text-sky-800',
+  INITIALS: 'bg-indigo-200 border-indigo-600 text-indigo-800',
   DATE: 'bg-green-200 border-green-600 text-green-800',
   NAME: 'bg-purple-200 border-purple-600 text-purple-800',
   EMAIL: 'bg-orange-200 border-orange-600 text-orange-800',
   TEXT: 'bg-gray-200 border-gray-600 text-gray-800',
+  NUMBER: 'bg-amber-200 border-amber-600 text-amber-800',
+  RADIO: 'bg-pink-200 border-pink-600 text-pink-800',
+  CHECKBOX: 'bg-rose-200 border-rose-600 text-rose-800',
+  DROPDOWN: 'bg-teal-200 border-teal-600 text-teal-800',
 };
 
 export default function DraggableField({
@@ -113,10 +119,15 @@ export default function DraggableField({
     dragStart.current = { x: e.clientX, y: e.clientY };
   };
 
+  const recipient = recipients.find(r => r.id === field.recipientId);
+  const colorClasses =
+    fieldColors[field.type] ?? 'bg-gray-200 border-gray-500 text-gray-800';
+  const label = field.fieldMeta?.label || field.type;
+
   return (
     <div
       ref={fieldRef}
-      className={`absolute border-2 ${fieldColors[field.type]} ${
+      className={`absolute border-2 rounded ${colorClasses} ${
         isDragging || isResizing ? 'opacity-80' : ''
       }`}
       style={{
@@ -126,9 +137,16 @@ export default function DraggableField({
         height: `${field.height}%`,
       }}
     >
-      <div className="flex items-center justify-between p-1 h-full">
-        <span className="text-xs font-bold truncate flex-1">{field.type}</span>
-        
+      <div className="flex items-center justify-between p-1 h-full gap-1">
+        <div className="flex flex-col text-[10px] leading-tight text-black flex-1 min-w-0">
+          <span className="font-semibold truncate">{label}</span>
+          {recipient ? (
+            <span className="text-[9px] uppercase tracking-wide text-gray-700 truncate">
+              {recipient.name}
+            </span>
+          ) : null}
+        </div>
+
         <button
           onClick={(e) => {
             e.stopPropagation();

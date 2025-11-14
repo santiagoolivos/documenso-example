@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import PDFUpload, { UploadResult } from '@/components/PDFUpload';
 import FieldToolbar from '@/components/FieldToolbar';
 import RecipientForm from '@/components/RecipientForm';
-import { Field, Recipient } from '@/types';
+import { Field, FieldMeta, FieldType, Recipient } from '@/types';
 import { FileText, Loader2, Save, Trash2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -25,6 +25,32 @@ const PDFViewer = dynamic(() => import('@/components/PDFViewer'), {
   ssr: false,
 });
 
+const FIELD_DEFAULTS: Record<
+  FieldType,
+  { width: number; height: number; fieldMeta: FieldMeta }
+> = {
+  SIGNATURE: { width: 18, height: 6, fieldMeta: { label: 'Signature', required: true, fontSize: 18, type: 'signature' } },
+  FREE_SIGNATURE: { width: 18, height: 6, fieldMeta: { label: 'Free Signature', required: true, fontSize: 18, type: 'free_signature' } },
+  INITIALS: { width: 10, height: 4, fieldMeta: { label: 'Initials', required: true, fontSize: 14, type: 'initials' } },
+  NAME: { width: 25, height: 5, fieldMeta: { label: 'Name', required: true, fontSize: 12, type: 'name', textAlign: 'left' } },
+  EMAIL: { width: 25, height: 5, fieldMeta: { label: 'Email', required: true, fontSize: 12, type: 'email', textAlign: 'left' } },
+  DATE: { width: 20, height: 5, fieldMeta: { label: 'Date', required: true, fontSize: 12, type: 'date', textAlign: 'left' } },
+  TEXT: { width: 30, height: 7, fieldMeta: { label: 'Text', required: true, fontSize: 12, type: 'text', textAlign: 'left' } },
+  NUMBER: { width: 20, height: 5, fieldMeta: { label: 'Number', required: true, fontSize: 12, type: 'number', textAlign: 'left' } },
+  RADIO: { width: 18, height: 8, fieldMeta: { label: 'Radio Options', required: true, fontSize: 12, type: 'radio', direction: 'vertical', values: [{ id: 1, value: 'Option 1', checked: false }] } },
+  CHECKBOX: { width: 18, height: 8, fieldMeta: { label: 'Checkbox Options', required: true, fontSize: 12, type: 'checkbox', direction: 'vertical', values: [{ id: 1, value: 'Option 1', checked: false }] } },
+  DROPDOWN: { width: 25, height: 6, fieldMeta: { label: 'Dropdown', required: true, fontSize: 12, type: 'dropdown', values: [{ id: 1, value: 'Option 1', checked: false }] } },
+};
+
+const DEFAULT_RECIPIENT_COLORS = [
+  '#3B82F6',
+  '#10B981',
+  '#8B5CF6',
+  '#F59E0B',
+  '#EF4444',
+  '#06B6D4',
+];
+
 export default function TemplatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -39,6 +65,18 @@ export default function TemplatePage() {
   const [error, setError] = useState<string | null>(null);
   const [templateDetails, setTemplateDetails] = useState<TemplateDetails | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [activeRecipientId, setActiveRecipientId] = useState<number | null>(null);
+  const [draggingField, setDraggingField] = useState<{
+    recipientId: number;
+    type: FieldType;
+  } | null>(null);
+  const visibleFields = useMemo(
+    () =>
+      activeRecipientId
+        ? fields.filter((field) => field.recipientId === activeRecipientId)
+        : fields,
+    [fields, activeRecipientId]
+  );
 
   useEffect(() => {
     const templateIdParam = searchParams.get('templateId');
@@ -50,6 +88,18 @@ export default function TemplatePage() {
       }
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (recipients.length === 0) {
+      setActiveRecipientId(null);
+      setDraggingField(null);
+      return;
+    }
+
+    if (!activeRecipientId || !recipients.some(r => r.id === activeRecipientId)) {
+      setActiveRecipientId(recipients[0].id);
+    }
+  }, [recipients, activeRecipientId]);
 
   const loadTemplate = async (id: number) => {
     setLoading(true);
@@ -93,6 +143,7 @@ export default function TemplatePage() {
         name: r.name || '',
         email: r.email || '',
         role: r.role || 'SIGNER',
+        color: DEFAULT_RECIPIENT_COLORS[index % DEFAULT_RECIPIENT_COLORS.length],
       }));
       setRecipients(templateRecipients);
 
@@ -105,16 +156,19 @@ export default function TemplatePage() {
         width?: string | number;
         height?: string | number;
         page?: number;
-        fieldMeta?: { required?: boolean };
+        fieldMeta?: FieldMeta;
+        recipientId?: number;
       }) => ({
         id: `field-${f.id || Date.now()}-${Math.random()}`,
-        type: f.type || 'SIGNATURE',
+        type: (f.type as FieldType) || 'SIGNATURE',
         x: parseFloat(String(f.positionX)) || 0,
         y: parseFloat(String(f.positionY)) || 0,
         width: parseFloat(String(f.width)) || 15,
         height: parseFloat(String(f.height)) || 5,
         page: f.page || 1,
+        recipientId: f.recipientId ?? null,
         required: f.fieldMeta?.required !== false,
+        fieldMeta: f.fieldMeta,
       }));
       setFields(templateFields);
 
@@ -146,24 +200,58 @@ export default function TemplatePage() {
     setStep('design');
   };
 
-  const addField = (fieldData: Omit<Field, 'id'>) => {
-    const newField: Field = {
-      id: `field-${Date.now()}-${Math.random()}`,
-      ...fieldData,
-    };
-    setFields([...fields, newField]);
+  const handleFieldDragStart = (recipientId: number, type: FieldType) => {
+    setDraggingField({ recipientId, type });
   };
 
-  const handleAddField = (type: Field['type']) => {
-    addField({
-      type,
-      x: 10,
-      y: 10,
-      width: 15,
-      height: 5,
-      page: 1,
-      required: true,
-    });
+  const handleFieldDragEnd = () => {
+    setDraggingField(null);
+  };
+
+  const handleFieldDrop = (position: { xPercent: number; yPercent: number; page: number }) => {
+    if (!draggingField) return;
+    const defaults = FIELD_DEFAULTS[draggingField.type];
+    const width = defaults.width;
+    const height = defaults.height;
+    const clampedX = Math.max(0, Math.min(100 - width, position.xPercent));
+    const clampedY = Math.max(0, Math.min(100 - height, position.yPercent));
+
+    const newField: Field = {
+      id: `field-${Date.now()}-${Math.random()}`,
+      type: draggingField.type,
+      x: clampedX,
+      y: clampedY,
+      width,
+      height,
+      page: position.page,
+      recipientId: draggingField.recipientId,
+      required: defaults.fieldMeta.required !== false,
+      fieldMeta: {
+        ...defaults.fieldMeta,
+        values: defaults.fieldMeta.values
+          ? defaults.fieldMeta.values.map((value) => ({ ...value }))
+          : undefined,
+      },
+    };
+
+    setFields((prev) => [...prev, newField]);
+    setDraggingField(null);
+  };
+
+  const buildFieldMetaPayload = (field: Field): FieldMeta => {
+    const defaults = FIELD_DEFAULTS[field.type];
+    const base = field.fieldMeta || {};
+    const merged: FieldMeta = {
+      ...defaults.fieldMeta,
+      ...base,
+    };
+
+    merged.label = merged.label || defaults.fieldMeta.label || field.type;
+    merged.required = merged.required ?? field.required;
+    merged.type = merged.type || defaults.fieldMeta.type || field.type.toLowerCase();
+    merged.fontSize = merged.fontSize || defaults.fieldMeta.fontSize || 12;
+
+    return merged;
   };
 
   const handleFieldUpdate = (updatedField: Field) => {
@@ -225,15 +313,33 @@ export default function TemplatePage() {
         throw new Error('Documenso did not return created recipients');
       }
 
+      const recipientIdMap = new Map<number, number>();
+      createdRecipients.forEach((recipient: { id?: number; email?: string }, index: number) => {
+        const localByIndex = recipients[index];
+        if (localByIndex?.id && recipient?.id) {
+          recipientIdMap.set(localByIndex.id, recipient.id);
+        }
+        if (recipient?.email) {
+          const localByEmail = recipients.find((r) => r.email === recipient.email);
+          if (localByEmail?.id && recipient?.id) {
+            recipientIdMap.set(localByEmail.id, recipient.id);
+          }
+        }
+      });
+
       console.log('Fields:', fields);
       // Step 2: Add fields if any
       if (fields.length > 0) {
         console.log('Adding fields');
         const payloadFields = fields
           .map((field, index) => {
-            const recipient =
-              createdRecipients[index % createdRecipients.length];
-            if (!recipient?.id) {
+            if (!field.recipientId) {
+              console.warn('Field missing recipient assignment', field);
+              return null;
+            }
+            const recipientId = recipientIdMap.get(field.recipientId);
+            if (!recipientId) {
+              console.warn('Could not match recipient for field', field);
               return null;
             }
             return {
@@ -244,8 +350,9 @@ export default function TemplatePage() {
               width: field.width,
               height: field.height,
               required: field.required !== false,
-              recipientId: recipient.id,
-              label: field.type,
+              recipientId,
+              label: field.fieldMeta?.label || field.type,
+              fieldMeta: buildFieldMetaPayload(field),
             };
           })
           .filter(Boolean);
@@ -661,9 +768,20 @@ export default function TemplatePage() {
                   className="text-xl font-semibold bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
                   placeholder="Template Title"
                 />
-                <p className="text-sm text-black px-2">
-                  {fields.length} field(s), {recipients.length} recipient(s)
-                </p>
+                <div className="text-sm text-black px-2 space-y-1">
+                  <p>
+                    {fields.length} field(s), {recipients.length} recipient(s)
+                  </p>
+                  {recipients.length > 0 && (
+                    <p className="text-xs text-gray-600">
+                      Viewing:{' '}
+                      {activeRecipientId
+                        ? recipients.find((r) => r.id === activeRecipientId)?.name ??
+                          'Recipient'
+                        : 'All recipients'}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
             
@@ -691,10 +809,14 @@ export default function TemplatePage() {
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-1 space-y-6">
-            <FieldToolbar onAddField={handleAddField} />
+            <FieldToolbar mode="recipientBased" />
             <RecipientForm
               recipients={recipients}
               onRecipientsChange={setRecipients}
+              activeRecipientId={activeRecipientId}
+              onSelectRecipient={setActiveRecipientId}
+              onFieldDragStart={handleFieldDragStart}
+              onFieldDragEnd={handleFieldDragEnd}
             />
           </div>
 
@@ -702,11 +824,12 @@ export default function TemplatePage() {
             {file && (
               <PDFViewer
                 file={file}
-                fields={fields}
+                fields={visibleFields}
                 recipients={recipients}
                 onFieldUpdate={handleFieldUpdate}
                 onFieldDelete={handleFieldDelete}
-                onFieldAdd={addField}
+                onFieldDrop={handleFieldDrop}
+                isFieldDragActive={Boolean(draggingField)}
               />
             )}
           </div>
